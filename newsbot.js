@@ -57,7 +57,7 @@ var leave_listener = function() {
 
 var leaveCron = function() {
   //Wrap with function that runs every morning IST
-  controller.storage.messages.all(function(messages) {
+  controller.storage.messages.all(function(err, messages) {
     bot.botkit.log(messages + ' messages');
     var messages_for_the_day = _.filter(messages, function(message) {
       return moment(message.date).format('x') == moment().startOf('day');
