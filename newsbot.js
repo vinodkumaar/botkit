@@ -1,8 +1,3 @@
-if (!process.env.token) {
-    console.log('Error: Specify token in environment');
-    process.exit(1);
-}
-
 var Botkit = require('./lib/Botkit.js');
 var os = require('os');
 var _ = require('underscore');
@@ -16,30 +11,59 @@ var controller = Botkit.slackbot({
 
 var bot = controller.spawn({
     token: process.env.token
-}).startRTM(function(err,res) {
-  bot.api.users.list({
-      presence: 0
-  },function(err, res) {
-    res.members.forEach(function(user) {
+    }).startRTM(function(err,res) {
+        fetchUsersAndSave();
+        fetchChannelsAndSave();
+
+    });
+
+var fetchUsersAndSave = function() {
+        bot.api.users.list({
+            presence: 0
+        }, function(err, res) {
+
+            addUsersToStore(res.members);
+        });
+};
+
+var fetchChannelsAndSave = function() {
+        bot.api.channels.list({},
+            function(err, res) {
+
+            addChannelsToStore(res.channels);
+        });
+};
+
+var addUsersToStore = function(users) {
+    users.forEach(function(user) {
         controller.storage.users.save(user);
     });
-    leave_listener();
-      if (err) {
-          bot.botkit.log('Failed to fetch users', err);
-      }
-  });
-});
+};
 
+var addChannelsToStore = function(channels) {
+    channels.forEach(function(channel) {
+        controller.storage.channels.save(channel);
+    });
+};
 
+var sendMessageAllUsers = function(message, channel_name) {
+    controller.storage.channels.all(function(err, channels){
+        var channel = _.findWhere(channels, {name: channel_name});
+
+        channel.members.forEach(function(user) {
+            bot.botkit.log(user.real_name + message);
+        });
+    });
+};
 
 var leave_listener = function() {
   controller.hears(['leave: (.*)'],'direct_message,direct_mention,mention',function(bot, incoming_message) {
       var matches = incoming_message.text.match(/leave: (.*)/i);
       controller.storage.users.get(incoming_message.user, function(err, user) {
-        var date = new Date(matches[1]);
+        var date = moment(matches[1]);
         var message_text = user.real_name + ' leave on ' + date.toString();
         var message = {
-          date: date,
+          date: date.format('X'),
           type: 'leave',
           message: message_text
         };
@@ -58,19 +82,15 @@ var leave_listener = function() {
 var leaveCron = function() {
   //Wrap with function that runs every morning IST
   controller.storage.messages.all(function(err, messages) {
-    bot.botkit.log(messages + ' messages');
-    var messages_for_the_day = _.filter(messages, function(message) {
-      return moment(message.date).format('x') == moment().startOf('day');
-    });
+    var today = moment().startOf('day').format('X');
+    var messages_for_the_day = _.where(messages, {date: today});
+
     messages_for_the_day.forEach(function(message) {
-      controller.storage.users.all(function(users) {
-        users.forEach(function(user) {
-          bot.botkit.log(message.message);
-        });
-      });
+        sendMessageAllUsers(message.message, 'hackathon');
     });
-  }) ;
-}
+
+  });
+};
 
 
 
@@ -95,3 +115,7 @@ var leaveCron = function() {
 //     text: 'hello cheta'
 //   });
 // },5000);
+
+
+leave_listener();
+
