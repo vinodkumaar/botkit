@@ -51,7 +51,12 @@ var sendMessageAllUsers = function(message, channel_name) {
         var channel = _.findWhere(channels, {name: channel_name});
 
         channel.members.forEach(function(user) {
-            bot.botkit.log(user.real_name + message);
+            bot.botkit.log(user + message);
+            // bot.api.chat.postMessage({
+            //     channel: user,
+            //     as_user: true,
+            //     text: message
+            // });
         });
     });
 };
@@ -83,7 +88,10 @@ var leaveCron = function() {
   //Wrap with function that runs every morning IST
   controller.storage.messages.all(function(err, messages) {
     var today = moment().startOf('day').format('X');
-    var messages_for_the_day = _.where(messages, {date: today});
+    var messages_for_the_day = _.where(messages, {
+        type: 'leave',
+        date: today
+    });
 
     messages_for_the_day.forEach(function(message) {
         sendMessageAllUsers(message.message, 'hackathon');
@@ -91,6 +99,57 @@ var leaveCron = function() {
 
   });
 };
+
+var story_listener = function() {
+  controller.hears(['story: (.*)'],'direct_message,direct_mention,mention',function(bot, incoming_message) {
+      var matches = incoming_message.text.match(/story: (.*)/i);
+      controller.storage.users.get(incoming_message.user, function(err, user) {
+        var message_text = matches[1];
+        var card_number = message_text.match(/#\d*/)[0];
+        var status = message_text.replace(card_number, '').trim();
+        var is_completed = message_text.indexOf('completed') > 0;
+
+        controller.storage.messages.all(function(err, messages) {
+            var message = _.where(messages, {card_number: card_number});
+
+            message = _.extend(message, {
+              date: moment().format('X'),
+              type: 'story',
+              card_number: card_number,
+              is_completed: is_completed,
+              status: status
+            });
+
+            controller.storage.messages.save(message,function(err, id) {
+                bot.reply(incoming_message, 'https://recruiterbox.mingle.thoughtworks.com/projects/recruiterbox/cards/' + message.card_number.replace('#') + ' (' + message.status + ')');
+            });
+        });
+      });
+  });
+
+  controller.hears(['send:story'],'direct_message,direct_mention,mention',function(bot, incoming_message) {
+      storyCron();
+  });
+
+};
+
+var storyCron = function() {
+  //Wrap with function that runs every morning IST
+  controller.storage.messages.all(function(err, messages) {
+    var today = moment().startOf('day').format('X');
+    var messages_for_the_day = _.where(messages, {
+        type: 'story',
+        is_completed: false
+    });
+
+    messages_for_the_day.forEach(function(message) {
+        var message_text = 'https://recruiterbox.mingle.thoughtworks.com/projects/recruiterbox/cards/' + message.card_number.replace('#') + ' (' + message.status + ')';
+        sendMessageAllUsers(message_text, 'hackathon');
+    });
+
+  });
+};
+
 
 
 
@@ -118,4 +177,5 @@ var leaveCron = function() {
 
 
 leave_listener();
+story_listener();
 
